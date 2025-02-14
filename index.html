@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Télétexte avec Liens</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #000;
+            color: #0f0;
+            padding: 20px;
+            max-width: 800px;
+            margin: auto;
+            position: relative;
+            overflow: hidden;
+        }
+        h1 {
+            text-align: center;
+        }
+        .rubrique {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #0f0;
+            position: relative;
+            z-index: 1;
+        }
+        .rubrique h2 {
+            margin: 0;
+        }
+        .link {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        input[type="text"] {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin: 5px 0;
+        }
+        button {
+            padding: 10px;
+            margin: 5px 0;
+            cursor: pointer;
+        }
+        .delete-button {
+            background-color: red;
+            color: white;
+            border: none;
+            padding: 5px;
+            cursor: pointer;
+        }
+        .navigation {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .scraped-data {
+            font-size: 0.9em;
+            color: #fff;
+        }
+        .scraper-container {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #0f0;
+            position: relative;
+            z-index: 1;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="matrixCanvas"></canvas>
+
+<h1>Télétexte avec Liens</h1>
+<div class="navigation" id="navigation-container"></div>
+<div id="rubriques-container"></div>
+<button onclick="ajouterRubrique()">Ajouter une Rubrique</button>
+
+<div class="scraper-container">
+    <h2>Web Scraper</h2>
+    <input type="text" id="scraper-input" placeholder="Entrez une URL HTTPS" />
+    <button onclick="scraperUrl()">Scraper l'URL</button>
+    <button onclick="recupererDonnees()">Récupérer les données</button>
+    <button onclick="effacerDonnees()">Effacer</button>
+    <div id="scraper-result" class="scraped-data"></div>
+</div>
+
+<script>
+    // Code pour l'effet de fond Matrix
+    const canvas = document.getElementById('matrixCanvas');
+    const ctx = canvas.getContext('2d');
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const fontSize = 10;
+    const columns = canvas.width / fontSize; 
+    const drops = Array(Math.floor(columns)).fill(1); 
+
+    function drawMatrix() {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#0f0'; 
+        ctx.font = fontSize + 'px Arial';
+        
+        for (let i = 0; i < drops.length; i++) {
+            const text = characters.charAt(Math.floor(Math.random() * characters.length));
+            ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+            drops[i]++;
+            if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                drops[i] = 0; 
+            }
+        }
+    }
+
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    setInterval(drawMatrix, 35);
+
+    let compteurRubriques = 0;
+
+    function ajouterRubrique() {
+        compteurRubriques++;
+        const rubriqueDiv = document.createElement('div');
+        rubriqueDiv.classList.add('rubrique');
+        rubriqueDiv.id = `rubrique-${compteurRubriques}`;
+        rubriqueDiv.innerHTML = `
+            <h2>Rubrique ${compteurRubriques}</h2>
+            <input type="text" id="link-input-${compteurRubriques}" placeholder="Ajouter un lien HTTPS" />
+            <button onclick="ajouterLien(${compteurRubriques})">Ajouter Lien</button>
+            <div id="links-container-${compteurRubriques}"></div>
+            <button class="delete-button" onclick="supprimerRubrique(${compteurRubriques})">Supprimer Rubrique</button>
+        `;
+        document.getElementById('rubriques-container').appendChild(rubriqueDiv);
+        ajouterBoutonNavigation(compteurRubriques);
+    }
+
+    async function ajouterLien(rubriqueId) {
+        const input = document.getElementById(`link-input-${rubriqueId}`);
+        const lien = input.value.trim();
+        
+        if (lien && lien.startsWith('https://')) {
+            const linksContainer = document.getElementById(`links-container-${rubriqueId}`);
+            const linkDiv = document.createElement('div');
+            linkDiv.classList.add('link');
+
+            const scrapedData = await scraper(lien); 
+            
+            linkDiv.innerHTML = `
+                <a href="${lien}" target="_blank">${lien}</a>
+                <button onclick="ouvrirLien('${lien}')">Ouvrir Lien</button>
+                <button class="delete-button" onclick="supprimerLien(this)">Supprimer</button>
+                <div class="scraped-data">${scrapedData}</div>
+            `;
+            linksContainer.appendChild(linkDiv);
+            input.value = '';
+        } else {
+            alert('Veuillez entrer un lien HTTPS valide.');
+        }
+    }
+
+    async function scraper(url) {
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Erreur lors de la récupération des données');
+            const text = await response.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(text, 'text/html');
+
+            // Extraire tous les liens <a> de la page
+            const links = doc.querySelectorAll('a');
+            const linkList = Array.from(links).map(link => link.href).join('<br>');
+            return linkList || 'Aucun lien trouvé'; 
+        } catch (error) {
+            console.error('Erreur de scraping:', error);
+            return 'Erreur lors de la récupération des données';
+        }
+    }
+
+    function ouvrirLien(lien) {
+        window.open(lien, '_blank');
+    }
+
+    function supprimerLien(button) {
+        const linkDiv = button.parentElement;
+        linkDiv.remove();
+    }
+
+    function ajouterBoutonNavigation(rubriqueId) {
+        const navigationContainer = document.getElementById('navigation-container');
+        const button = document.createElement('button');
+        button.textContent = `Aller à Rubrique ${rubriqueId}`;
+        button.onclick = () => scrollToRubrique(rubriqueId);
+        navigationContainer.appendChild(button);
+    }
+
+    function scrollToRubrique(rubriqueId) {
+        const rubrique = document.getElementById(`rubrique-${rubriqueId}`);
+        rubrique.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function supprimerRubrique(rubriqueId) {
+        const rubrique = document.getElementById(`rubrique-${rubriqueId}`);
+        rubrique.remove();
+        const button = Array.from(document.querySelectorAll('.navigation button')).find(btn => btn.textContent.includes(`Aller à Rubrique ${rubriqueId}`));
+        if (button) button.remove(); 
+    }
+
+    async function scraperUrl() {
+        const input = document.getElementById('scraper-input');
+        const url = input.value.trim();
+        const resultContainer = document.getElementById('scraper-result');
+        
+        const urlRegex = /^https:\/\/[^\s/$.?#].[^\s]*$/;
+        
+        if (url && urlRegex.test(url)) {
+            const scrapedData = await scraper(url);
+            resultContainer.innerHTML = `<strong>Résultat du scraping :</strong> ${scrapedData}`;
+        } else {
+            alert('Veuillez entrer une URL HTTPS valide.');
+        }
+    }
+
+    function recupererDonnees() {
+        const input = document.getElementById('scraper-input');
+        const url = input.value.trim();
+        const resultContainer = document.getElementById('scraper-result');
+        
+        if (url) {
+            resultContainer.innerHTML += `<strong>Données récupérées de :</strong> ${url}<br>`;
+        } else {
+            alert('Veuillez entrer une URL pour récupérer les données.');
+        }
+    }
+
+    function effacerDonnees() {
+        const resultContainer = document.getElementById('scraper-result');
+        resultContainer.innerHTML = '';
+        document.getElementById('scraper-input').value = '';
+    }
+</script>
+
+</body>
+</html>
